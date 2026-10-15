@@ -644,20 +644,36 @@ const HEAT_PALETTES = {
     0, 'rgba(0,0,0,0)', 0.2, 'rgba(60,60,60,0.5)', 0.45, 'rgba(130,130,130,0.65)',
     0.68, 'rgba(195,195,195,0.78)', 0.85, 'rgba(230,230,230,0.88)', 1, 'rgba(255,255,255,0.95)']
 };
-/* heatmap-intensity as a zoom ramp scaled by the user's slider multiplier (0.3–2.5).
-   Kept modest at the default (1x) so the field isn't already density-saturated —
-   otherwise raising/lowering it further just clips to the same top color and the
-   slider looks like it does nothing. */
+/* heatmap-intensity as a zoom ramp scaled by the user's slider multiplier (0.3–2.5). */
 function heatIntensityExpr(){
-  return ['*', mapViewState.heatIntensity, ['interpolate', ['linear'], ['zoom'], 14, 0.55, 18, 1.6]];
+  return ['*', mapViewState.heatIntensity, ['interpolate', ['linear'], ['zoom'], 14, 0.9, 18, 2.4]];
 }
-/* heatmap-opacity also rides the slider directly, as a plain alpha multiplier —
-   this guarantees a visible brighten/dim at every slider position even in zones
-   where the density itself is already saturated and heatmap-intensity alone
-   would show no change there. */
-function heatOpacityExpr(){
-  const alpha = Math.max(0.12, Math.min(1, mapViewState.heatIntensity));
-  return ['*', alpha, ['interpolate', ['linear'], ['zoom'], 16, 0.85, 19, 0.55]];
+/* The slider's main, guaranteed-visible job: it rescales WHERE each palette's color
+   stops fall along the 0–1 density axis, instead of only feeding into the density
+   calculation (which can already be saturated and clip to the same top color no
+   matter how hard you push heatmap-intensity). At a high setting, every stop is
+   divided by a factor >1, so the ramp reaches its hottest colors at a much lower
+   raw density — the hot tones "pop" across more of the facility. At a low setting
+   the stops are pushed out past 1 and collapse, so only the coolest/transparent
+   end of the ramp ever shows — the field reads muted. */
+function heatColorExpr(){
+  const raw = HEAT_PALETTES[mapViewState.heatPalette] || HEAT_PALETTES.classic;
+  const header = raw.slice(0, 3);
+  const stops = [];
+  for (let i = 3; i < raw.length; i += 2) stops.push([raw[i], raw[i + 1]]);
+  const f = Math.max(0.2, mapViewState.heatIntensity);
+  let prev = -1;
+  const scaled = [];
+  stops.forEach(([d, c]) => {
+    const nd = Math.max(0, Math.min(1, d / f));
+    if (nd <= prev) {
+      if (scaled.length) scaled[scaled.length - 1] = c; /* collapsed stop — keep the hottest color at this density */
+      return;
+    }
+    prev = nd;
+    scaled.push(nd, c);
+  });
+  return [...header, ...scaled];
 }
 
 /* Quadratic-bezier curve between two geo points (lng/lat space — area is small so linear interpolation is a fine approximation) */
@@ -949,9 +965,9 @@ function rebuildCustomLayers(){
     paint: {
       'heatmap-weight': ['interpolate', ['linear'], ['get', 'weight'], 0, 0, 300, 1],
       'heatmap-intensity': heatIntensityExpr(),
-      'heatmap-color': HEAT_PALETTES[mapViewState.heatPalette],
+      'heatmap-color': heatColorExpr(),
       'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 14, 55, 18, 110],
-      'heatmap-opacity': heatOpacityExpr()
+      'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 16, 0.85, 19, 0.55]
     }
   });
 
@@ -1107,7 +1123,7 @@ function updateHeatIntensity(val){
   document.getElementById('heat-intensity-val').textContent = val + '%';
   if (map && map.getLayer('heat-layer')) {
     map.setPaintProperty('heat-layer', 'heatmap-intensity', heatIntensityExpr());
-    map.setPaintProperty('heat-layer', 'heatmap-opacity', heatOpacityExpr());
+    map.setPaintProperty('heat-layer', 'heatmap-color', heatColorExpr());
   }
 }
 
@@ -1115,7 +1131,7 @@ function setHeatPalette(key){
   if (!HEAT_PALETTES[key]) return;
   mapViewState.heatPalette = key;
   document.querySelectorAll('.heat-swatch').forEach(b => b.classList.toggle('active', b.dataset.palette === key));
-  if (map && map.getLayer('heat-layer')) map.setPaintProperty('heat-layer', 'heatmap-color', HEAT_PALETTES[key]);
+  if (map && map.getLayer('heat-layer')) map.setPaintProperty('heat-layer', 'heatmap-color', heatColorExpr());
 }
 
 function toggleConnections(){
