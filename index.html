@@ -644,9 +644,18 @@ const HEAT_PALETTES = {
     0, 'rgba(0,0,0,0)', 0.2, 'rgba(60,60,60,0.5)', 0.45, 'rgba(130,130,130,0.65)',
     0.68, 'rgba(195,195,195,0.78)', 0.85, 'rgba(230,230,230,0.88)', 1, 'rgba(255,255,255,0.95)']
 };
-/* heatmap-intensity as a zoom ramp scaled by the user's slider multiplier (0.3–2.5). */
+/* heatmap-intensity as a zoom ramp scaled by the user's slider multiplier (0.3–2.5).
+   IMPORTANT: Mapbox's style spec only allows a ["zoom"] expression as the *direct,
+   top-level* input to "interpolate"/"step" — it can't be nested inside another
+   operator like ["*", ...]. Wrapping it that way (as an earlier version of this did)
+   makes map.addLayer() throw, which silently aborts the rest of layer setup — that
+   was the actual bug behind both "the slider does nothing" and "no se ve el mapa
+   térmico". So the slider multiplier is applied to the stop VALUES in plain JS
+   before the expression is built, keeping interpolate(zoom) as the single top-level
+   expression. */
 function heatIntensityExpr(){
-  return ['*', mapViewState.heatIntensity, ['interpolate', ['linear'], ['zoom'], 14, 0.9, 18, 2.4]];
+  const f = mapViewState.heatIntensity;
+  return ['interpolate', ['linear'], ['zoom'], 14, 0.9 * f, 18, 2.4 * f];
 }
 /* The slider's main, guaranteed-visible job: it rescales WHERE each palette's color
    stops fall along the 0–1 density axis, instead of only feeding into the density
