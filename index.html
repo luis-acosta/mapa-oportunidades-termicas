@@ -107,9 +107,11 @@ h1,h2,h3,h4{font-family:'Fraunces',Georgia,serif;font-weight:700;line-height:1.2
 .mapboxgl-ctrl-logo{opacity:.7}
 
 /* Live markers (Mapbox GL custom DOM markers) */
-.gl-marker{position:relative;width:24px;height:24px;cursor:pointer;transition:transform .2s}
-.gl-marker:hover{transform:scale(1.15)}
-.gl-marker.highlighted{transform:scale(1.4);z-index:5}
+.gl-marker{position:relative;width:24px;height:24px;cursor:pointer}
+.gl-marker.highlighted{z-index:5}
+.gl-marker-inner{position:relative;width:100%;height:100%;transition:transform .2s;pointer-events:none}
+.gl-marker:hover .gl-marker-inner{transform:scale(1.15)}
+.gl-marker.highlighted .gl-marker-inner{transform:scale(1.4)}
 .gl-marker-dot{
   position:absolute;inset:0;border-radius:50%;
   display:flex;align-items:center;justify-content:center;
@@ -740,7 +742,7 @@ function addLiveMarker(item, type){
   const el = document.createElement('div');
   el.className = `gl-marker gl-marker-${type}`;
   el.dataset.id = item.id;
-  el.innerHTML = `<div class="gl-marker-pulse"></div><div class="gl-marker-dot">${item.id}</div>`;
+  el.innerHTML = `<div class="gl-marker-inner"><div class="gl-marker-pulse"></div><div class="gl-marker-dot">${item.id}</div></div>`;
   el.addEventListener('click', (e) => {
     e.stopPropagation();
     if (type === 'source') selectSource(item.id); else selectDemand(item.id);
