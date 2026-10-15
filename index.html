@@ -644,9 +644,20 @@ const HEAT_PALETTES = {
     0, 'rgba(0,0,0,0)', 0.2, 'rgba(60,60,60,0.5)', 0.45, 'rgba(130,130,130,0.65)',
     0.68, 'rgba(195,195,195,0.78)', 0.85, 'rgba(230,230,230,0.88)', 1, 'rgba(255,255,255,0.95)']
 };
-/* heatmap-intensity as a zoom ramp scaled by the user's slider multiplier (0.3–2.5) */
+/* heatmap-intensity as a zoom ramp scaled by the user's slider multiplier (0.3–2.5).
+   Kept modest at the default (1x) so the field isn't already density-saturated —
+   otherwise raising/lowering it further just clips to the same top color and the
+   slider looks like it does nothing. */
 function heatIntensityExpr(){
-  return ['*', mapViewState.heatIntensity, ['interpolate', ['linear'], ['zoom'], 14, 1.6, 18, 4.2]];
+  return ['*', mapViewState.heatIntensity, ['interpolate', ['linear'], ['zoom'], 14, 0.55, 18, 1.6]];
+}
+/* heatmap-opacity also rides the slider directly, as a plain alpha multiplier —
+   this guarantees a visible brighten/dim at every slider position even in zones
+   where the density itself is already saturated and heatmap-intensity alone
+   would show no change there. */
+function heatOpacityExpr(){
+  const alpha = Math.max(0.12, Math.min(1, mapViewState.heatIntensity));
+  return ['*', alpha, ['interpolate', ['linear'], ['zoom'], 16, 0.85, 19, 0.55]];
 }
 
 /* Quadratic-bezier curve between two geo points (lng/lat space — area is small so linear interpolation is a fine approximation) */
@@ -940,7 +951,7 @@ function rebuildCustomLayers(){
       'heatmap-intensity': heatIntensityExpr(),
       'heatmap-color': HEAT_PALETTES[mapViewState.heatPalette],
       'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 14, 55, 18, 110],
-      'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 16, 0.85, 19, 0.55]
+      'heatmap-opacity': heatOpacityExpr()
     }
   });
 
@@ -1094,7 +1105,10 @@ function toggleHeatmap(){
 function updateHeatIntensity(val){
   mapViewState.heatIntensity = val / 100;
   document.getElementById('heat-intensity-val').textContent = val + '%';
-  if (map && map.getLayer('heat-layer')) map.setPaintProperty('heat-layer', 'heatmap-intensity', heatIntensityExpr());
+  if (map && map.getLayer('heat-layer')) {
+    map.setPaintProperty('heat-layer', 'heatmap-intensity', heatIntensityExpr());
+    map.setPaintProperty('heat-layer', 'heatmap-opacity', heatOpacityExpr());
+  }
 }
 
 function setHeatPalette(key){
