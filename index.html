@@ -113,17 +113,40 @@ h1,h2,h3,h4{font-family:'Fraunces',Georgia,serif;font-weight:700;line-height:1.2
 .gl-popup .mapboxgl-popup-content{
   background:var(--card);color:var(--fg);
   border:1px solid color-mix(in srgb,var(--fg) 15%,transparent);
-  border-radius:10px;padding:12px 16px;
+  border-radius:12px;padding:0;overflow:hidden;
   box-shadow:0 8px 32px rgba(0,0,0,.5);
   font-family:'IBM Plex Sans',sans-serif;font-size:12px;
-  min-width:160px;max-width:240px;
+  min-width:210px;max-width:280px;
 }
 .gl-popup .mapboxgl-popup-tip{
   border-top-color:var(--card)!important;border-bottom-color:var(--card)!important;
   border-left-color:var(--card)!important;border-right-color:var(--card)!important;
 }
-.gl-popup .mapboxgl-popup-close-button{color:var(--fg3);font-size:16px;padding:2px 6px}
+.gl-popup .mapboxgl-popup-close-button{color:var(--fg3);font-size:16px;padding:2px 6px;z-index:2}
 .gl-popup .mapboxgl-popup-close-button:hover{background:transparent;color:var(--fg)}
+
+/* Marker popup — small colored "mini dashboard" card */
+.pp-card{display:flex;flex-direction:column}
+.pp-head{display:flex;align-items:center;gap:9px;padding:10px 14px;border-bottom:1px solid color-mix(in srgb,var(--fg) 10%,transparent)}
+.pp-id-badge{
+  flex-shrink:0;width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:12px;color:#051417;
+}
+.pp-head-text{flex:1;min-width:0}
+.pp-name{font-weight:700;font-size:12.5px;line-height:1.25;color:var(--fg)}
+.pp-type-row{margin-top:4px}
+.pp-body{padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.pp-gauge-label{display:flex;justify-content:space-between;font-size:10px;color:var(--fg3);font-family:'IBM Plex Mono',monospace;margin-bottom:5px}
+.pp-gauge-track{position:relative;height:7px;border-radius:5px;overflow:visible}
+.pp-gauge-range{position:absolute;top:-2.5px;height:12px;border-radius:4px;background:rgba(255,255,255,.3);border:1.5px solid #fff;box-sizing:border-box}
+.pp-gauge-point{position:absolute;top:-3.5px;width:3px;height:14px;border-radius:2px;background:#fff;box-shadow:0 0 4px rgba(0,0,0,.6);transform:translateX(-50%)}
+.pp-stats{display:flex;gap:8px}
+.pp-stat{flex:1;background:var(--card2);border-radius:8px;padding:7px 9px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.pp-stat .k{font-size:9px;color:var(--fg3);text-transform:uppercase;letter-spacing:.04em;display:flex;align-items:center;gap:4px;white-space:nowrap}
+.pp-stat .v{font-size:12.5px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--fg);overflow:hidden;text-overflow:ellipsis}
+.pp-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.pp-loc{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--fg2)}
+.pp-loc svg{flex-shrink:0;opacity:.7}
 
 .map-legend{
   position:absolute;bottom:16px;left:16px;z-index:10;
@@ -166,6 +189,31 @@ h1,h2,h3,h4{font-family:'Fraunces',Georgia,serif;font-weight:700;line-height:1.2
   .map-toolbar{left:8px;gap:6px}
   .map-tool-btn{padding:8px;width:34px;height:34px;justify-content:center}
   .map-tool-btn span{display:none}
+}
+
+/* Heatmap intensity / thermographic-palette controls (shown while Térmico is active) */
+.heat-controls{
+  position:absolute;left:12px;bottom:66px;z-index:15;
+  background:rgba(10,30,25,.88);backdrop-filter:blur(10px);
+  border:1px solid rgba(0,174,192,.3);border-radius:10px;
+  padding:10px 12px;display:none;flex-direction:column;gap:9px;
+  min-width:190px;
+}
+.heat-controls.visible{display:flex}
+.heat-controls-row{display:flex;align-items:center;gap:8px}
+.heat-controls-label{font-size:10px;color:rgba(200,220,225,.75);font-family:'IBM Plex Sans',sans-serif;white-space:nowrap;min-width:52px}
+.heat-controls-val{font-size:10px;color:var(--teal);font-family:'IBM Plex Mono',monospace;min-width:34px;text-align:right}
+.heat-controls input[type=range]{flex:1;height:4px;margin:0}
+.heat-controls input[type=range]::-webkit-slider-thumb{width:14px;height:14px}
+.heat-palette-swatches{display:flex;gap:6px}
+.heat-swatch{
+  width:22px;height:22px;border-radius:6px;border:2px solid rgba(255,255,255,.15);
+  cursor:pointer;padding:0;transition:.15s;
+}
+.heat-swatch:hover{transform:scale(1.1)}
+.heat-swatch.active{border-color:#fff;box-shadow:0 0 0 2px rgba(0,174,192,.55)}
+@media(max-width:900px){
+  .heat-controls{left:8px;bottom:58px;min-width:168px;padding:8px 10px}
 }
 
 .config-panel{
@@ -380,6 +428,22 @@ select.unit-select{appearance:auto}
         <span>Recorrido</span>
       </button>
     </div>
+    <div class="heat-controls" id="heat-controls">
+      <div class="heat-controls-row">
+        <span class="heat-controls-label">Intensidad</span>
+        <input type="range" min="30" max="250" value="100" id="heat-intensity-slider" oninput="updateHeatIntensity(this.value)">
+        <span class="heat-controls-val" id="heat-intensity-val">100%</span>
+      </div>
+      <div class="heat-controls-row">
+        <span class="heat-controls-label">Paleta</span>
+        <div class="heat-palette-swatches">
+          <button class="heat-swatch active" data-palette="classic" onclick="setHeatPalette('classic')" title="Clásico" style="background:linear-gradient(90deg,#00AEC0,#CFE84E,#FF8A3D,#EF4444)"></button>
+          <button class="heat-swatch" data-palette="ironbow" onclick="setHeatPalette('ironbow')" title="Ironbow" style="background:linear-gradient(90deg,#140028,#5a0a6e,#b4245a,#e66414,#ffffff)"></button>
+          <button class="heat-swatch" data-palette="rainbow" onclick="setHeatPalette('rainbow')" title="Arcoíris" style="background:linear-gradient(90deg,#001edc,#00c8dc,#00dc50,#e6dc00,#e61e1e)"></button>
+          <button class="heat-swatch" data-palette="whitehot" onclick="setHeatPalette('whitehot')" title="Blanco cálido" style="background:linear-gradient(90deg,#000000,#828282,#ffffff)"></button>
+        </div>
+      </div>
+    </div>
     <div class="map-legend">
       <span><span class="map-legend-dot" style="background:#FF8A3D"></span>Fuente termica</span>
       <span><span class="map-legend-dot" style="background:#60A5FA"></span>Demanda energetica</span>
@@ -562,7 +626,28 @@ const MAP_STYLES = {
 };
 const STYLE_ORDER = ['satellite','terrain','plano'];
 
-let mapViewState = { styleMode:'satellite', heatmapOn:false, connectionsOn:false, is3D:false, touring:false };
+let mapViewState = { styleMode:'satellite', heatmapOn:false, connectionsOn:false, is3D:false, touring:false, heatIntensity:1, heatPalette:'classic' };
+
+/* Thermographic-style heatmap color ramps, all keyed on the same ['heatmap-density'] stops
+   so swapping palettes never shifts where the "hot" edge of the field falls. */
+const HEAT_PALETTES = {
+  classic: ['interpolate', ['linear'], ['heatmap-density'],
+    0, 'rgba(0,0,0,0)', 0.15, 'rgba(0,174,192,0.45)', 0.35, 'rgba(207,232,78,0.6)',
+    0.55, 'rgba(255,138,61,0.72)', 0.75, 'rgba(240,71,154,0.82)', 1, 'rgba(239,68,68,0.92)'],
+  ironbow: ['interpolate', ['linear'], ['heatmap-density'],
+    0, 'rgba(0,0,0,0)', 0.12, 'rgba(20,0,40,0.55)', 0.32, 'rgba(90,10,110,0.68)',
+    0.52, 'rgba(180,30,90,0.78)', 0.68, 'rgba(230,100,20,0.85)', 0.85, 'rgba(250,190,20,0.9)', 1, 'rgba(255,255,255,0.95)'],
+  rainbow: ['interpolate', ['linear'], ['heatmap-density'],
+    0, 'rgba(0,0,0,0)', 0.15, 'rgba(0,30,220,0.55)', 0.32, 'rgba(0,200,220,0.65)',
+    0.5, 'rgba(0,220,80,0.72)', 0.68, 'rgba(230,220,0,0.8)', 0.85, 'rgba(255,120,0,0.88)', 1, 'rgba(230,30,30,0.93)'],
+  whitehot: ['interpolate', ['linear'], ['heatmap-density'],
+    0, 'rgba(0,0,0,0)', 0.2, 'rgba(60,60,60,0.5)', 0.45, 'rgba(130,130,130,0.65)',
+    0.68, 'rgba(195,195,195,0.78)', 0.85, 'rgba(230,230,230,0.88)', 1, 'rgba(255,255,255,0.95)']
+};
+/* heatmap-intensity as a zoom ramp scaled by the user's slider multiplier (0.3–2.5) */
+function heatIntensityExpr(){
+  return ['*', mapViewState.heatIntensity, ['interpolate', ['linear'], ['zoom'], 14, 1.6, 18, 4.2]];
+}
 
 /* Quadratic-bezier curve between two geo points (lng/lat space — area is small so linear interpolation is a fine approximation) */
 function bezierCoords(lng1, lat1, lng2, lat2, bulge){
@@ -852,10 +937,8 @@ function rebuildCustomLayers(){
     layout: { visibility: mapViewState.heatmapOn ? 'visible' : 'none' },
     paint: {
       'heatmap-weight': ['interpolate', ['linear'], ['get', 'weight'], 0, 0, 300, 1],
-      'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 14, 1.6, 18, 4.2],
-      'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'],
-        0, 'rgba(0,0,0,0)', 0.15, 'rgba(0,174,192,0.45)', 0.35, 'rgba(207,232,78,0.6)',
-        0.55, 'rgba(255,138,61,0.72)', 0.75, 'rgba(240,71,154,0.82)', 1, 'rgba(239,68,68,0.92)'],
+      'heatmap-intensity': heatIntensityExpr(),
+      'heatmap-color': HEAT_PALETTES[mapViewState.heatPalette],
       'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 14, 55, 18, 110],
       'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 16, 0.85, 19, 0.55]
     }
@@ -1005,6 +1088,20 @@ function toggleHeatmap(){
   setLayerSetVisible('source', !mapViewState.heatmapOn);
   setLayerSetVisible('demand', !mapViewState.heatmapOn);
   document.getElementById('tool-heatmap').classList.toggle('active', mapViewState.heatmapOn);
+  document.getElementById('heat-controls').classList.toggle('visible', mapViewState.heatmapOn);
+}
+
+function updateHeatIntensity(val){
+  mapViewState.heatIntensity = val / 100;
+  document.getElementById('heat-intensity-val').textContent = val + '%';
+  if (map && map.getLayer('heat-layer')) map.setPaintProperty('heat-layer', 'heatmap-intensity', heatIntensityExpr());
+}
+
+function setHeatPalette(key){
+  if (!HEAT_PALETTES[key]) return;
+  mapViewState.heatPalette = key;
+  document.querySelectorAll('.heat-swatch').forEach(b => b.classList.toggle('active', b.dataset.palette === key));
+  if (map && map.getLayer('heat-layer')) map.setPaintProperty('heat-layer', 'heatmap-color', HEAT_PALETTES[key]);
 }
 
 function toggleConnections(){
@@ -1048,7 +1145,7 @@ function toggleTour(){
 function showPopup(lng, lat, html) {
   closePopup();
   if (!map) return;
-  activePopup = new mapboxgl.Popup({ closeButton: true, closeOnClick: false, offset: 18, className: 'gl-popup', maxWidth: '260px' })
+  activePopup = new mapboxgl.Popup({ closeButton: true, closeOnClick: false, offset: 18, className: 'gl-popup', maxWidth: '280px' })
     .setLngLat([lng, lat])
     .setHTML(html)
     .addTo(map);
@@ -1133,10 +1230,7 @@ function selectSource(id){
   closePopup();
   if(state.mapReady){
     const s = SOURCES[id];
-    showPopup(s.lng, s.lat,
-      `<div style="font-weight:700;color:#FF8A3D;margin-bottom:4px">${s.id}: ${s.name}</div>
-       <div style="font-size:11px;color:#8CA8AD">${s.type} · ${s.tempRange} °C<br>${formatPower(s.power)} · ${s.continuity}<br>${s.location}</div>`
-    );
+    showPopup(s.lng, s.lat, buildPopupCard(s, 'source'));
   }
   activateStep(2);
   buildDemandList();
@@ -1170,10 +1264,7 @@ function selectDemand(id){
   closePopup();
   if(state.mapReady){
     const d=DEMANDS[id];
-    showPopup(d.lng, d.lat,
-      `<div style="font-weight:700;color:#60A5FA;margin-bottom:4px">${d.id}: ${d.name}</div>
-       <div style="font-size:11px;color:#8CA8AD">${d.type} · ${d.tempRange} °C<br>${formatPower(d.power)}<br>${d.location}</div>`
-    );
+    showPopup(d.lng, d.lat, buildPopupCard(d, 'demand'));
   }
   drawFlowLine();
   activateStep(3);
@@ -1341,6 +1432,96 @@ function formatPower(mw){
   if(u==='MWh/ano') return (mw*hrs).toFixed(0)+' MWh/a';
   if(u==='GWh/ano') return (mw*hrs/1000).toFixed(2)+' GWh/a';
   return mw.toFixed(1)+' MWt';
+}
+
+/* ═══════════════════════════════════════════════════
+   POPUP MINI-DASHBOARD — temperature gauge + colored stats
+   ═══════════════════════════════════════════════════ */
+const TEMP_GAUGE_MAX = 320;
+const TEMP_GAUGE_STOPS = [
+  [0,   [59,130,246]],  /* blue  — cold   */
+  [60,  [6,182,212]],   /* cyan                */
+  [140, [207,232,78]],  /* lime                */
+  [220, [255,138,61]],  /* orange              */
+  [320, [239,68,68]],   /* red   — hot    */
+];
+function tempToColor(t){
+  const v = Math.max(0, Math.min(TEMP_GAUGE_MAX, t));
+  for (let i = 0; i < TEMP_GAUGE_STOPS.length - 1; i++){
+    const [v0, c0] = TEMP_GAUGE_STOPS[i], [v1, c1] = TEMP_GAUGE_STOPS[i + 1];
+    if (v >= v0 && v <= v1){
+      const f = (v - v0) / (v1 - v0);
+      const r = Math.round(c0[0] + (c1[0] - c0[0]) * f);
+      const g = Math.round(c0[1] + (c1[1] - c0[1]) * f);
+      const b = Math.round(c0[2] + (c1[2] - c0[2]) * f);
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+  const last = TEMP_GAUGE_STOPS[TEMP_GAUGE_STOPS.length - 1][1];
+  return `rgb(${last[0]},${last[1]},${last[2]})`;
+}
+function tempGaugeGradient(){
+  return `linear-gradient(90deg, ${TEMP_GAUGE_STOPS.map(([v, c]) => `rgb(${c[0]},${c[1]},${c[2]}) ${(v / TEMP_GAUGE_MAX * 100).toFixed(1)}%`).join(', ')})`;
+}
+function tempPct(t){ return Math.max(0, Math.min(100, t / TEMP_GAUGE_MAX * 100)); }
+function continuityColor(c){
+  if (c === 'Alta') return 'var(--green)';
+  if (c === 'Media') return 'var(--yellow)';
+  return 'var(--red)';
+}
+
+function buildPopupCard(item, kind){
+  const accent = kind === 'source' ? '#FF8A3D' : '#60A5FA';
+  const isSource = kind === 'source';
+  let gaugeOverlay, gaugeLabelL, gaugeLabelR;
+  if (isSource){
+    const l = tempPct(item.tempMin), r = tempPct(item.tempMax);
+    gaugeOverlay = `<div class="pp-gauge-range" style="left:${l}%;width:${Math.max(r - l, 2)}%"></div>`;
+    gaugeLabelL = `${item.tempMin}°C`;
+    gaugeLabelR = `${item.tempMax}°C`;
+  } else {
+    const p = tempPct(item.tempReq);
+    gaugeOverlay = `<div class="pp-gauge-point" style="left:${p}%"></div>`;
+    gaugeLabelL = 'Requerido';
+    gaugeLabelR = `${item.tempReq}°C`;
+  }
+  const statsHtml = isSource
+    ? `<div class="pp-stat">
+         <div class="k">Potencia</div>
+         <div class="v" style="color:${accent}">${formatPower(item.power)}</div>
+       </div>
+       <div class="pp-stat">
+         <div class="k"><span class="pp-dot" style="background:${continuityColor(item.continuity)}"></span>Continuidad</div>
+         <div class="v">${item.continuity}</div>
+       </div>`
+    : `<div class="pp-stat">
+         <div class="k">Demanda</div>
+         <div class="v" style="color:${accent}">${formatPower(item.power)}</div>
+       </div>
+       <div class="pp-stat">
+         <div class="k">Tipo</div>
+         <div class="v" style="font-size:11px">${item.type}</div>
+       </div>`;
+  return `<div class="pp-card">
+    <div class="pp-head">
+      <div class="pp-id-badge" style="background:${accent}">${item.id}</div>
+      <div class="pp-head-text">
+        <div class="pp-name">${item.name}</div>
+        <div class="pp-type-row"><span class="tag tag-${kind}">${item.type}</span></div>
+      </div>
+    </div>
+    <div class="pp-body">
+      <div>
+        <div class="pp-gauge-label"><span>${gaugeLabelL}</span><span>${gaugeLabelR}</span></div>
+        <div class="pp-gauge-track" style="background:${tempGaugeGradient()}">${gaugeOverlay}</div>
+      </div>
+      <div class="pp-stats">${statsHtml}</div>
+      <div class="pp-loc">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s7-7.6 7-13a7 7 0 10-14 0c0 5.4 7 13 7 13z"/><circle cx="12" cy="9" r="2.5"/></svg>
+        ${item.location}
+      </div>
+    </div>
+  </div>`;
 }
 
 function updateUnits(){
