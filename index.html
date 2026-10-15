@@ -165,6 +165,27 @@ h1,h2,h3,h4{font-family:'Fraunces',Georgia,serif;font-weight:700;line-height:1.2
 }
 .map-title-sub{font-family:'IBM Plex Sans',sans-serif;font-size:10px;font-weight:400;color:rgba(200,220,225,.7);margin-top:2px}
 
+.map-toolbar{
+  position:absolute;left:12px;top:50%;transform:translateY(-50%);z-index:15;
+  display:flex;flex-direction:column;gap:8px;
+}
+.map-tool-btn{
+  display:flex;align-items:center;gap:7px;
+  background:rgba(10,30,25,.82);backdrop-filter:blur(8px);
+  border:1px solid rgba(0,174,192,.25);border-radius:10px;
+  padding:8px 11px;color:rgba(220,235,238,.9);
+  font-family:'IBM Plex Sans',sans-serif;font-size:10.5px;font-weight:600;
+  cursor:pointer;white-space:nowrap;transition:.15s;
+}
+.map-tool-btn svg{flex-shrink:0}
+.map-tool-btn:hover{background:rgba(10,45,40,.92);border-color:rgba(0,174,192,.45)}
+.map-tool-btn.active{background:var(--teal);color:#051417;border-color:var(--teal)}
+@media(max-width:900px){
+  .map-toolbar{left:8px;gap:6px}
+  .map-tool-btn{padding:8px;width:34px;height:34px;justify-content:center}
+  .map-tool-btn span{display:none}
+}
+
 .config-panel{
   width:380px;max-width:100%;overflow-y:auto;
   background:var(--paper);border-left:1px solid color-mix(in srgb,var(--fg) 8%,transparent);
@@ -355,6 +376,28 @@ select.unit-select{appearance:auto}
       Refinería de Cartagena (Reficar)
       <div class="map-title-sub">Mamonal, Cartagena &mdash; Vista aérea interactiva</div>
     </div>
+    <div class="map-toolbar">
+      <button class="map-tool-btn active" id="tool-style" onclick="cycleMapStyle()" title="Cambiar vista del mapa">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>
+        <span id="tool-style-label">Satélite</span>
+      </button>
+      <button class="map-tool-btn" id="tool-heatmap" onclick="toggleHeatmap()" title="Mapa térmico">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3c2 3-1 4-1 7a3 3 0 106 0c0-1.5-.7-2.3-1-3.5 2 1.5 3 3.5 3 6.5a7 7 0 11-14 0c0-3.3 2.2-5 4-7.5-.3-1 .3-2 2-2.5z"/></svg>
+        <span>Térmico</span>
+      </button>
+      <button class="map-tool-btn" id="tool-connections" onclick="toggleConnections()" title="Conexiones compatibles">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="12" cy="19" r="2.2"/><path d="M8 7l3.2 10.5M16 7l-3.2 10.5M8.2 6h7.6"/></svg>
+        <span>Conexiones</span>
+      </button>
+      <button class="map-tool-btn" id="tool-3d" onclick="toggle3D()" title="Vista 3D / plana">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg>
+        <span>Vista 3D</span>
+      </button>
+      <button class="map-tool-btn" id="tool-tour" onclick="toggleTour()" title="Recorrido 360°">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        <span>Recorrido</span>
+      </button>
+    </div>
     <div class="map-legend">
       <span><span class="map-legend-dot" style="background:#FF8A3D"></span>Fuente termica</span>
       <span><span class="map-legend-dot" style="background:#60A5FA"></span>Demanda energetica</span>
@@ -526,7 +569,31 @@ let map = null;
 let markerRefs = { source:{}, demand:{} };
 let activePopup = null;
 let flowDashTimer = null, flowDashStep = 0;
+let tourRAF = null;
+let customLayersReady = false;
 const FLOW_DASH_SEQUENCE = [[0,4,3],[0.5,4,2.5],[1,4,2],[1.5,4,1.5],[2,4,1],[2.5,4,.5],[3,4,0],[0,.5,3,3.5]];
+
+const MAP_STYLES = {
+  satellite: { url:'mapbox://styles/mapbox/satellite-streets-v12', label:'Satélite' },
+  terrain:   { url:'mapbox://styles/mapbox/outdoors-v12',          label:'Relieve'  },
+  plano:     { url:'mapbox://styles/mapbox/light-v11',             label:'Plano'    },
+};
+const STYLE_ORDER = ['satellite','terrain','plano'];
+
+let mapViewState = { styleMode:'satellite', heatmapOn:false, connectionsOn:false, is3D:false, touring:false };
+
+/* Quadratic-bezier curve between two geo points (lng/lat space — area is small so linear interpolation is a fine approximation) */
+function bezierCoords(lng1, lat1, lng2, lat2, bulge){
+  const mx = (lng1+lng2)/2, my = (lat1+lat2)/2 + (bulge!==undefined?bulge:0.0008);
+  const steps = 24, coords = [];
+  for (let i=0; i<=steps; i++){
+    const t = i/steps;
+    const lng = (1-t)*(1-t)*lng1 + 2*(1-t)*t*mx + t*t*lng2;
+    const lat = (1-t)*(1-t)*lat1 + 2*(1-t)*t*my + t*t*lat2;
+    coords.push([lng,lat]);
+  }
+  return coords;
+}
 
 const BUILDINGS = {
   type:'FeatureCollection',
@@ -672,7 +739,7 @@ function initMap(){
 
   map = new mapboxgl.Map({
     container: 'mapbox-map',
-    style: 'mapbox://styles/mapbox/satellite-streets-v12',
+    style: MAP_STYLES[mapViewState.styleMode].url,
     center: [centerLng, centerLat],
     zoom: 16.2,
     pitch: 0,
@@ -683,59 +750,141 @@ function initMap(){
   map.addControl(new mapboxgl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-right');
   map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-right');
 
-  map.on('load', () => {
+  map.once('load', () => {
     map.fitBounds(
       [[GEO_BOUNDS.minLng, GEO_BOUNDS.minLat], [GEO_BOUNDS.maxLng, GEO_BOUNDS.maxLat]],
       { padding: 24, duration: 0 }
     );
-
-    /* ── Zone overlays (fill + dashed outline) ── */
-    const zoneFeatures = ZONES.map(z => ({
-      type: 'Feature',
-      properties: { name: z.name, color: z.color, outline: z.outline },
-      geometry: { type: 'Polygon', coordinates: [[...z.coords, z.coords[0]]] }
-    }));
-    map.addSource('zones', { type: 'geojson', data: { type: 'FeatureCollection', features: zoneFeatures } });
-    map.addLayer({ id: 'zones-fill', type: 'fill', source: 'zones', paint: { 'fill-color': ['get', 'color'] } });
-    map.addLayer({ id: 'zones-outline', type: 'line', source: 'zones', paint: { 'line-color': ['get', 'outline'], 'line-width': 1.5, 'line-dasharray': [2, 1] } });
-
-    /* ── Zone labels ── */
-    const zoneLabelFeatures = ZONES.map(z => {
-      const cx = (z.coords[0][0] + z.coords[2][0]) / 2;
-      const cy = z.coords[0][1] - 0.0003;
-      return { type: 'Feature', properties: { name: z.name.toUpperCase() }, geometry: { type: 'Point', coordinates: [cx, cy] } };
-    });
-    map.addSource('zone-labels', { type: 'geojson', data: { type: 'FeatureCollection', features: zoneLabelFeatures } });
-    map.addLayer({
-      id: 'zone-labels-layer', type: 'symbol', source: 'zone-labels',
-      layout: { 'text-field': ['get', 'name'], 'text-size': 9, 'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'], 'text-letter-spacing': 0.08, 'text-allow-overlap': true },
-      paint: { 'text-color': 'rgba(255,255,255,0.6)', 'text-halo-color': 'rgba(0,0,0,0.55)', 'text-halo-width': 1.2 }
-    });
-
-    /* ── Building labels ── */
-    const buildingLabelFeatures = BUILDINGS.features.map(f => {
-      const c = f.geometry.coordinates[0];
-      const cx = (c[0][0] + c[2][0]) / 2, cy = (c[0][1] + c[2][1]) / 2;
-      return { type: 'Feature', properties: { name: f.properties.name }, geometry: { type: 'Point', coordinates: [cx, cy] } };
-    });
-    map.addSource('building-labels', { type: 'geojson', data: { type: 'FeatureCollection', features: buildingLabelFeatures } });
-    map.addLayer({
-      id: 'building-labels-layer', type: 'symbol', source: 'building-labels',
-      layout: { 'text-field': ['get', 'name'], 'text-size': 9.5, 'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'], 'text-letter-spacing': 0.02, 'text-allow-overlap': false },
-      paint: { 'text-color': 'rgba(230,240,242,0.92)', 'text-halo-color': 'rgba(5,20,23,0.85)', 'text-halo-width': 1.4 }
-    });
-
-    /* ── Flow line source + layers (populated by drawFlowLine) ── */
-    map.addSource('flow-line', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer({ id: 'flow-line-glow', type: 'line', source: 'flow-line', paint: { 'line-color': '#00AEC0', 'line-width': 10, 'line-opacity': 0.15, 'line-blur': 3 } });
-    map.addLayer({ id: 'flow-line-main', type: 'line', source: 'flow-line', paint: { 'line-color': '#00AEC0', 'line-width': 2.5, 'line-dasharray': [0, 4, 3], 'line-opacity': 0.9 } });
-
-    /* ── Source / demand markers ── */
-    Object.values(SOURCES).forEach(s => addLiveMarker(s, 'source'));
-    Object.values(DEMANDS).forEach(d => addLiveMarker(d, 'demand'));
-
-    state.mapReady = true;
   });
+
+  /* style.load fires for the initial style AND every subsequent setStyle() call —
+     all custom sources/layers must be rebuilt each time since setStyle wipes them. */
+  map.on('style.load', () => {
+    rebuildCustomLayers();
+    if (!customLayersReady) {
+      Object.values(SOURCES).forEach(s => addLiveMarker(s, 'source'));
+      Object.values(DEMANDS).forEach(d => addLiveMarker(d, 'demand'));
+      customLayersReady = true;
+      state.mapReady = true;
+    }
+  });
+}
+
+function rebuildCustomLayers(){
+  /* ── Zone overlays (fill + dashed outline) ── */
+  const zoneFeatures = ZONES.map(z => ({
+    type: 'Feature',
+    properties: { name: z.name, color: z.color, outline: z.outline },
+    geometry: { type: 'Polygon', coordinates: [[...z.coords, z.coords[0]]] }
+  }));
+  map.addSource('zones', { type: 'geojson', data: { type: 'FeatureCollection', features: zoneFeatures } });
+  map.addLayer({ id: 'zones-fill', type: 'fill', source: 'zones', paint: { 'fill-color': ['get', 'color'] } });
+  map.addLayer({ id: 'zones-outline', type: 'line', source: 'zones', paint: { 'line-color': ['get', 'outline'], 'line-width': 1.5, 'line-dasharray': [2, 1] } });
+
+  /* ── Zone labels ── */
+  const zoneLabelFeatures = ZONES.map(z => {
+    const cx = (z.coords[0][0] + z.coords[2][0]) / 2;
+    const cy = z.coords[0][1] - 0.0003;
+    return { type: 'Feature', properties: { name: z.name.toUpperCase() }, geometry: { type: 'Point', coordinates: [cx, cy] } };
+  });
+  map.addSource('zone-labels', { type: 'geojson', data: { type: 'FeatureCollection', features: zoneLabelFeatures } });
+  map.addLayer({
+    id: 'zone-labels-layer', type: 'symbol', source: 'zone-labels',
+    layout: { 'text-field': ['get', 'name'], 'text-size': 9, 'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'], 'text-letter-spacing': 0.08, 'text-allow-overlap': true },
+    paint: { 'text-color': 'rgba(255,255,255,0.6)', 'text-halo-color': 'rgba(0,0,0,0.55)', 'text-halo-width': 1.2 }
+  });
+
+  /* ── 3D building extrusions (only when the style carries vector building data) ── */
+  add3DBuildingsLayerIfSupported();
+
+  /* ── Building labels (drawn above the extrusions) ── */
+  const buildingLabelFeatures = BUILDINGS.features.map(f => {
+    const c = f.geometry.coordinates[0];
+    const cx = (c[0][0] + c[2][0]) / 2, cy = (c[0][1] + c[2][1]) / 2;
+    return { type: 'Feature', properties: { name: f.properties.name }, geometry: { type: 'Point', coordinates: [cx, cy] } };
+  });
+  map.addSource('building-labels', { type: 'geojson', data: { type: 'FeatureCollection', features: buildingLabelFeatures } });
+  map.addLayer({
+    id: 'building-labels-layer', type: 'symbol', source: 'building-labels',
+    layout: { 'text-field': ['get', 'name'], 'text-size': 9.5, 'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'], 'text-letter-spacing': 0.02, 'text-allow-overlap': false },
+    paint: { 'text-color': 'rgba(230,240,242,0.92)', 'text-halo-color': 'rgba(5,20,23,0.85)', 'text-halo-width': 1.4 }
+  });
+
+  /* ── Flow line source + layers (populated by drawFlowLine) ── */
+  map.addSource('flow-line', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'flow-line-glow', type: 'line', source: 'flow-line', paint: { 'line-color': '#00AEC0', 'line-width': 10, 'line-opacity': 0.15, 'line-blur': 3 } });
+  map.addLayer({ id: 'flow-line-main', type: 'line', source: 'flow-line', paint: { 'line-color': '#00AEC0', 'line-width': 2.5, 'line-dasharray': [0, 4, 3], 'line-opacity': 0.9 } });
+
+  /* ── Compatible source↔demand connections (toggle) ── */
+  map.addSource('connections', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({
+    id: 'connections-layer', type: 'line', source: 'connections',
+    layout: { visibility: mapViewState.connectionsOn ? 'visible' : 'none' },
+    paint: { 'line-color': '#CFE84E', 'line-width': 1.4, 'line-opacity': 0.55, 'line-dasharray': [1, 2] }
+  });
+
+  /* ── Thermal heatmap (toggle) ── */
+  map.addSource('heat-points', { type: 'geojson', data: buildHeatGeoJSON() });
+  map.addLayer({
+    id: 'heat-layer', type: 'heatmap', source: 'heat-points', maxzoom: 20,
+    layout: { visibility: mapViewState.heatmapOn ? 'visible' : 'none' },
+    paint: {
+      'heatmap-weight': ['interpolate', ['linear'], ['get', 'weight'], 0, 0, 300, 1],
+      'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 14, 1, 18, 3],
+      'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'],
+        0, 'rgba(0,0,0,0)', 0.2, 'rgba(0,174,192,0.5)', 0.4, 'rgba(207,232,78,0.6)',
+        0.6, 'rgba(255,138,61,0.7)', 0.8, 'rgba(240,71,154,0.8)', 1, 'rgba(239,68,68,0.9)'],
+      'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 14, 25, 18, 55],
+      'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 16, 0.85, 19, 0.5]
+    }
+  });
+
+  /* ── Restore toggled state after a style switch ── */
+  setMarkersVisible(!mapViewState.heatmapOn);
+  if (mapViewState.connectionsOn) renderAllConnections();
+  if (state.selectedSource && state.selectedDemand) drawFlowLine();
+}
+
+function add3DBuildingsLayerIfSupported(){
+  if (!map || map.getLayer('3d-buildings') || !map.getSource('composite')) return;
+  try {
+    map.addLayer({
+      id: '3d-buildings', source: 'composite', 'source-layer': 'building',
+      type: 'fill-extrusion', minzoom: 14,
+      filter: ['==', ['get', 'extrude'], 'true'],
+      layout: { visibility: mapViewState.is3D ? 'visible' : 'none' },
+      paint: {
+        'fill-extrusion-color': '#8899a0',
+        'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 15.05, ['get', 'height']],
+        'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 14, 0, 15.05, ['get', 'min_height']],
+        'fill-extrusion-opacity': 0.75
+      }
+    });
+  } catch(e) { /* style has no vector building data (e.g. a pure raster style) */ }
+}
+
+function buildHeatGeoJSON(){
+  const features = Object.values(SOURCES).map(s => ({
+    type: 'Feature',
+    properties: { weight: s.tempMax, power: s.power },
+    geometry: { type: 'Point', coordinates: [s.lng, s.lat] }
+  }));
+  return { type: 'FeatureCollection', features };
+}
+
+function setMarkersVisible(visible){
+  Object.values(markerRefs.source).forEach(r => r.el.style.display = visible ? '' : 'none');
+  Object.values(markerRefs.demand).forEach(r => r.el.style.display = visible ? '' : 'none');
+}
+
+function renderAllConnections(){
+  if (!map || !map.getSource('connections')) return;
+  const features = PRELOADED.map(o => {
+    const s = SOURCES[o.sourceId], d = DEMANDS[o.demandId];
+    if (!s || !d) return null;
+    return { type: 'Feature', properties: { score: o.score }, geometry: { type: 'LineString', coordinates: bezierCoords(s.lng, s.lat, d.lng, d.lat, 0.0006) } };
+  }).filter(Boolean);
+  map.getSource('connections').setData({ type: 'FeatureCollection', features });
 }
 
 function addLiveMarker(item, type){
@@ -751,6 +900,61 @@ function addLiveMarker(item, type){
     .setLngLat([item.lng, item.lat])
     .addTo(map);
   markerRefs[type][item.id] = { marker, el };
+}
+
+/* ═══════════════════════════════════════════════════
+   MAP TOOLBAR — style / heatmap / connections / 3D / tour
+   ═══════════════════════════════════════════════════ */
+function cycleMapStyle(){
+  if (!map) return;
+  const idx = STYLE_ORDER.indexOf(mapViewState.styleMode);
+  const next = STYLE_ORDER[(idx + 1) % STYLE_ORDER.length];
+  mapViewState.styleMode = next;
+  document.getElementById('tool-style-label').textContent = MAP_STYLES[next].label;
+  map.setStyle(MAP_STYLES[next].url);
+}
+
+function toggleHeatmap(){
+  if (!map) return;
+  mapViewState.heatmapOn = !mapViewState.heatmapOn;
+  if (map.getLayer('heat-layer')) map.setLayoutProperty('heat-layer', 'visibility', mapViewState.heatmapOn ? 'visible' : 'none');
+  setMarkersVisible(!mapViewState.heatmapOn);
+  document.getElementById('tool-heatmap').classList.toggle('active', mapViewState.heatmapOn);
+}
+
+function toggleConnections(){
+  if (!map) return;
+  mapViewState.connectionsOn = !mapViewState.connectionsOn;
+  if (mapViewState.connectionsOn) renderAllConnections();
+  if (map.getLayer('connections-layer')) map.setLayoutProperty('connections-layer', 'visibility', mapViewState.connectionsOn ? 'visible' : 'none');
+  document.getElementById('tool-connections').classList.toggle('active', mapViewState.connectionsOn);
+}
+
+function toggle3D(){
+  if (!map) return;
+  mapViewState.is3D = !mapViewState.is3D;
+  map.easeTo({ pitch: mapViewState.is3D ? 55 : 0, duration: 700 });
+  if (map.getLayer('3d-buildings')) map.setLayoutProperty('3d-buildings', 'visibility', mapViewState.is3D ? 'visible' : 'none');
+  document.getElementById('tool-3d').classList.toggle('active', mapViewState.is3D);
+}
+
+function toggleTour(){
+  if (!map) return;
+  mapViewState.touring = !mapViewState.touring;
+  document.getElementById('tool-tour').classList.toggle('active', mapViewState.touring);
+  if (mapViewState.touring){
+    map.easeTo({ pitch: Math.max(map.getPitch(), 45), duration: 600 });
+    const step = () => {
+      if (!mapViewState.touring) return;
+      map.setBearing((map.getBearing() + 0.12) % 360);
+      tourRAF = requestAnimationFrame(step);
+    };
+    tourRAF = requestAnimationFrame(step);
+  } else {
+    if (tourRAF) cancelAnimationFrame(tourRAF);
+    tourRAF = null;
+    map.easeTo({ pitch: mapViewState.is3D ? 55 : 0, bearing: 0, duration: 600 });
+  }
 }
 
 /* ═══════════════════════════════════════════════════
