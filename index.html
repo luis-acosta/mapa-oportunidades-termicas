@@ -106,26 +106,8 @@ h1,h2,h3,h4{font-family:'Fraunces',Georgia,serif;font-weight:700;line-height:1.2
 #mapbox-map{width:100%;height:100%;min-height:400px}
 .mapboxgl-ctrl-logo{opacity:.7}
 
-/* Live markers (Mapbox GL custom DOM markers) */
-.gl-marker{position:relative;width:24px;height:24px;cursor:pointer}
-.gl-marker.highlighted{z-index:5}
-.gl-marker-inner{position:relative;width:100%;height:100%;transition:transform .2s;pointer-events:none}
-.gl-marker:hover .gl-marker-inner{transform:scale(1.15)}
-.gl-marker.highlighted .gl-marker-inner{transform:scale(1.4)}
-.gl-marker-dot{
-  position:absolute;inset:0;border-radius:50%;
-  display:flex;align-items:center;justify-content:center;
-  color:#fff;font-size:8px;font-weight:700;font-family:'IBM Plex Mono',monospace;
-  text-shadow:0 1px 2px rgba(0,0,0,.5);
-  border:1.5px solid rgba(255,255,255,.5);
-}
-.gl-marker.highlighted .gl-marker-dot{border-width:2.5px}
-.gl-marker-source .gl-marker-dot{background:radial-gradient(circle at 35% 35%,#FFD080,#FF8A3D);box-shadow:0 0 12px rgba(255,138,61,.7),0 2px 6px rgba(0,0,0,.4)}
-.gl-marker-demand .gl-marker-dot{background:radial-gradient(circle at 35% 35%,#A0C8FF,#60A5FA);box-shadow:0 0 12px rgba(96,165,250,.7),0 2px 6px rgba(0,0,0,.4)}
-.gl-marker-pulse{position:absolute;inset:-8px;border-radius:50%;animation:glMarkerPulse 2.5s ease-out infinite}
-.gl-marker-source .gl-marker-pulse{background:rgba(255,138,61,.35)}
-.gl-marker-demand .gl-marker-pulse{background:rgba(96,165,250,.35)}
-@keyframes glMarkerPulse{0%{transform:scale(.6);opacity:.6}100%{transform:scale(1.6);opacity:0}}
+/* Source/demand markers are now native Mapbox GL circle+symbol layers (see rebuildCustomLayers),
+   not DOM elements — they stay pixel-locked to the map during zoom/pan with zero extra CSS. */
 
 /* Mapbox native popup restyled to match app theme */
 .gl-popup .mapboxgl-popup-content{
@@ -566,11 +548,11 @@ const MAPBOX_TOKEN = 'pk.eyJ1IjoibHVpc3NwaW0iLCJhIjoiY211enA2dGNoMHZqczJ4cHhveG1
 
 /* Live Mapbox state */
 let map = null;
-let markerRefs = { source:{}, demand:{} };
 let activePopup = null;
 let flowDashTimer = null, flowDashStep = 0;
 let tourRAF = null;
-let customLayersReady = false;
+let hoveredSourceId = null, hoveredDemandId = null;
+let glowPulseRAF = null, glowPulsePhase = 0;
 const FLOW_DASH_SEQUENCE = [[0,4,3],[0.5,4,2.5],[1,4,2],[1.5,4,1.5],[2,4,1],[2.5,4,.5],[3,4,0],[0,.5,3,3.5]];
 
 const MAP_STYLES = {
@@ -656,21 +638,21 @@ const SOURCES = {
   F1:{id:'F1',name:'Vapor LP excedente',type:'Vapor',tempRange:'120-180',tempMin:120,tempMax:180,power:12,continuity:'Alta',location:'Calderas / utilities',lng:-75.4991,lat:10.3182},
   F2:{id:'F2',name:'Condensado caliente',type:'Liquido',tempRange:'80-110',tempMin:80,tempMax:110,power:6,continuity:'Alta',location:'Retorno de condensado',lng:-75.4993,lat:10.3168},
   F3:{id:'F3',name:'Gases calientes FCC',type:'Gas',tempRange:'180-300',tempMin:180,tempMax:300,power:15,continuity:'Media',location:'Craqueo Catalítico (FCC)',lng:-75.4953,lat:10.3168},
-  F4:{id:'F4',name:'Agua caliente enfriamiento',type:'Agua',tempRange:'35-55',tempMin:35,tempMax:55,power:20,continuity:'Alta',location:'Torres de enfriamiento',lng:-75.4941,lat:10.3186},
+  F4:{id:'F4',name:'Agua caliente enfriamiento',type:'Agua',tempRange:'35-55',tempMin:35,tempMax:55,power:20,continuity:'Alta',location:'Torres de enfriamiento',lng:-75.4920,lat:10.3186},
   F5:{id:'F5',name:'Purgas de vapor',type:'Vapor',tempRange:'100-160',tempMin:100,tempMax:160,power:3,continuity:'Variable',location:'Red de vapor',lng:-75.4985,lat:10.3182},
   F6:{id:'F6',name:'Corriente liquida caliente',type:'Liquido',tempRange:'100-150',tempMin:100,tempMax:150,power:10,continuity:'Alta',location:'Unidad de Crudo (CDU)',lng:-75.4979,lat:10.3162},
-  F7:{id:'F7',name:'Calor de compresores',type:'Aire/agua',tempRange:'60-90',tempMin:60,tempMax:90,power:4,continuity:'Alta',location:'Servicios industriales',lng:-75.4976,lat:10.3131},
-  F8:{id:'F8',name:'Calor disperso viscorreducción',type:'Mixto',tempRange:'40-80',tempMin:40,tempMax:80,power:8,continuity:'Variable',location:'Viscorreducción',lng:-75.4933,lat:10.3166},
+  F7:{id:'F7',name:'Calor de compresores',type:'Aire/agua',tempRange:'60-90',tempMin:60,tempMax:90,power:4,continuity:'Alta',location:'Servicios industriales',lng:-75.4990,lat:10.3135},
+  F8:{id:'F8',name:'Calor disperso viscorreducción',type:'Mixto',tempRange:'40-80',tempMin:40,tempMax:80,power:8,continuity:'Variable',location:'Viscorreducción',lng:-75.4945,lat:10.3164},
 };
 
 const DEMANDS = {
   D1:{id:'D1',name:'Agua helada edificios',type:'Frio',tempRange:'7-12',tempReq:10,power:2,location:'Edificio administrativo',lng:-75.5010,lat:10.3125},
-  D2:{id:'D2',name:'Salas de control',type:'Frio',tempRange:'7-12',tempReq:10,power:1,location:'Unidad de Crudo (CDU)',lng:-75.4979,lat:10.3158},
-  D3:{id:'D3',name:'Subestaciones',type:'Frio/clima',tempRange:'18-24',tempReq:21,power:0.8,location:'Subestación eléctrica',lng:-75.4952,lat:10.3129},
-  D4:{id:'D4',name:'Precalentamiento agua',type:'Calor util',tempRange:'60-90',tempReq:75,power:4,location:'Calderas',lng:-75.4995,lat:10.3178},
-  D5:{id:'D5',name:'Corriente fria proceso',type:'Calor proceso',tempRange:'100-150',tempReq:125,power:8,location:'Unidad de Crudo (CDU)',lng:-75.4982,lat:10.3162},
-  D6:{id:'D6',name:'Electricidad auxiliar',type:'Electricidad',tempRange:'>150',tempReq:150,power:1,location:'Servicios industriales',lng:-75.4976,lat:10.3135},
-  D7:{id:'D7',name:'Confort terminal marítimo',type:'Frio',tempRange:'7-12',tempReq:10,power:1.5,location:'Terminal marítimo',lng:-75.4927,lat:10.3140},
+  D2:{id:'D2',name:'Salas de control',type:'Frio',tempRange:'7-12',tempReq:10,power:1,location:'Unidad de Crudo (CDU)',lng:-75.4979,lat:10.3162},
+  D3:{id:'D3',name:'Subestaciones',type:'Frio/clima',tempRange:'18-24',tempReq:21,power:0.8,location:'Subestación eléctrica',lng:-75.4924,lat:10.3135},
+  D4:{id:'D4',name:'Precalentamiento agua',type:'Calor util',tempRange:'60-90',tempReq:75,power:4,location:'Calderas',lng:-75.4995,lat:10.3183},
+  D5:{id:'D5',name:'Corriente fria proceso',type:'Calor proceso',tempRange:'100-150',tempReq:125,power:8,location:'Unidad de Crudo (CDU)',lng:-75.4978,lat:10.3164},
+  D6:{id:'D6',name:'Electricidad auxiliar',type:'Electricidad',tempRange:'>150',tempReq:150,power:1,location:'Servicios industriales',lng:-75.4992,lat:10.3131},
+  D7:{id:'D7',name:'Confort terminal marítimo',type:'Frio',tempRange:'7-12',tempReq:10,power:1.5,location:'Terminal marítimo',lng:-75.4912,lat:10.3145},
 };
 
 const TECHS = [
@@ -757,16 +739,43 @@ function initMap(){
     );
   });
 
+  /* Click / hover handling is bound to the map object itself and survives setStyle(),
+     since Mapbox filters events by layer id at dispatch time — register these ONCE. */
+  map.on('click', 'source-dot-layer', (e) => { if (e.features[0]) selectSource(e.features[0].properties.id); });
+  map.on('click', 'demand-dot-layer', (e) => { if (e.features[0]) selectDemand(e.features[0].properties.id); });
+
+  map.on('mouseenter', 'source-dot-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'source-dot-layer', () => {
+    map.getCanvas().style.cursor = '';
+    if (hoveredSourceId !== null) map.setFeatureState({ source: 'source-points', id: hoveredSourceId }, { hover: false });
+    hoveredSourceId = null;
+  });
+  map.on('mousemove', 'source-dot-layer', (e) => {
+    if (!e.features.length) return;
+    if (hoveredSourceId !== null) map.setFeatureState({ source: 'source-points', id: hoveredSourceId }, { hover: false });
+    hoveredSourceId = e.features[0].id;
+    map.setFeatureState({ source: 'source-points', id: hoveredSourceId }, { hover: true });
+  });
+
+  map.on('mouseenter', 'demand-dot-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'demand-dot-layer', () => {
+    map.getCanvas().style.cursor = '';
+    if (hoveredDemandId !== null) map.setFeatureState({ source: 'demand-points', id: hoveredDemandId }, { hover: false });
+    hoveredDemandId = null;
+  });
+  map.on('mousemove', 'demand-dot-layer', (e) => {
+    if (!e.features.length) return;
+    if (hoveredDemandId !== null) map.setFeatureState({ source: 'demand-points', id: hoveredDemandId }, { hover: false });
+    hoveredDemandId = e.features[0].id;
+    map.setFeatureState({ source: 'demand-points', id: hoveredDemandId }, { hover: true });
+  });
+
   /* style.load fires for the initial style AND every subsequent setStyle() call —
      all custom sources/layers must be rebuilt each time since setStyle wipes them. */
   map.on('style.load', () => {
     rebuildCustomLayers();
-    if (!customLayersReady) {
-      Object.values(SOURCES).forEach(s => addLiveMarker(s, 'source'));
-      Object.values(DEMANDS).forEach(d => addLiveMarker(d, 'demand'));
-      customLayersReady = true;
-      state.mapReady = true;
-    }
+    if (!state.mapReady) state.mapReady = true;
+    startGlowPulse();
   });
 }
 
@@ -794,8 +803,19 @@ function rebuildCustomLayers(){
     paint: { 'text-color': 'rgba(255,255,255,0.6)', 'text-halo-color': 'rgba(0,0,0,0.55)', 'text-halo-width': 1.2 }
   });
 
-  /* ── 3D building extrusions (only when the style carries vector building data) ── */
-  add3DBuildingsLayerIfSupported();
+  /* ── 3D solids: OUR OWN building footprints + real heights (OSM has no footprint/height
+     data for this industrial site, so the generic composite 'building' source is empty here) ── */
+  map.addSource('building-solids', { type: 'geojson', data: BUILDINGS });
+  map.addLayer({
+    id: 'building-solids-layer', type: 'fill-extrusion', source: 'building-solids',
+    layout: { visibility: mapViewState.is3D ? 'visible' : 'none' },
+    paint: {
+      'fill-extrusion-color': ['get', 'color'],
+      'fill-extrusion-height': ['get', 'height'],
+      'fill-extrusion-base': 0,
+      'fill-extrusion-opacity': 0.9
+    }
+  });
 
   /* ── Building labels (drawn above the extrusions) ── */
   const buildingLabelFeatures = BUILDINGS.features.map(f => {
@@ -823,58 +843,137 @@ function rebuildCustomLayers(){
     paint: { 'line-color': '#CFE84E', 'line-width': 1.4, 'line-opacity': 0.55, 'line-dasharray': [1, 2] }
   });
 
-  /* ── Thermal heatmap (toggle) ── */
+  /* ── Thermal heatmap (toggle) — covers the whole facility, not just the 8 source points:
+     sources contribute by real temperature, demands by a damped temp, and every building
+     by a zone-based ambient baseline so the field reads as continuous across the plant. */
   map.addSource('heat-points', { type: 'geojson', data: buildHeatGeoJSON() });
   map.addLayer({
     id: 'heat-layer', type: 'heatmap', source: 'heat-points', maxzoom: 20,
     layout: { visibility: mapViewState.heatmapOn ? 'visible' : 'none' },
     paint: {
       'heatmap-weight': ['interpolate', ['linear'], ['get', 'weight'], 0, 0, 300, 1],
-      'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 14, 1, 18, 3],
+      'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 14, 1.6, 18, 4.2],
       'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'],
-        0, 'rgba(0,0,0,0)', 0.2, 'rgba(0,174,192,0.5)', 0.4, 'rgba(207,232,78,0.6)',
-        0.6, 'rgba(255,138,61,0.7)', 0.8, 'rgba(240,71,154,0.8)', 1, 'rgba(239,68,68,0.9)'],
-      'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 14, 25, 18, 55],
-      'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 16, 0.85, 19, 0.5]
+        0, 'rgba(0,0,0,0)', 0.15, 'rgba(0,174,192,0.45)', 0.35, 'rgba(207,232,78,0.6)',
+        0.55, 'rgba(255,138,61,0.72)', 0.75, 'rgba(240,71,154,0.82)', 1, 'rgba(239,68,68,0.92)'],
+      'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 14, 55, 18, 110],
+      'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 16, 0.85, 19, 0.55]
     }
   });
 
+  /* ── Source / demand points as native circle+symbol layers (locked to the WebGL
+     render pipeline — no DOM/canvas desync, so they never drift during zoom/pan) ── */
+  map.addSource('source-points', { type: 'geojson', data: buildPointsGeoJSON(SOURCES) });
+  map.addSource('demand-points', { type: 'geojson', data: buildPointsGeoJSON(DEMANDS) });
+
+  map.addLayer({
+    id: 'source-glow', type: 'circle', source: 'source-points',
+    paint: { 'circle-radius': 14, 'circle-color': '#FF8A3D', 'circle-opacity': 0.35, 'circle-blur': 0.6 }
+  });
+  map.addLayer({
+    id: 'source-dot-layer', type: 'circle', source: 'source-points',
+    paint: {
+      'circle-radius': ['case', ['boolean', ['feature-state', 'selected'], false], 12.5, ['boolean', ['feature-state', 'hover'], false], 11.5, 10],
+      'circle-color': '#FF8A3D',
+      'circle-stroke-color': 'rgba(255,220,180,0.85)',
+      'circle-stroke-width': ['case', ['boolean', ['feature-state', 'selected'], false], 2.5, 1.5]
+    }
+  });
+  map.addLayer({
+    id: 'source-label-layer', type: 'symbol', source: 'source-points',
+    layout: {
+      'text-field': ['format', ['get', 'id'], { 'font-scale': 1.05 }, '\n', {}, ['get', 'name'], { 'font-scale': 0.72 }],
+      'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'], 'text-size': 10.5,
+      'text-anchor': 'top', 'text-offset': [0, 1.15], 'text-allow-overlap': false, 'text-optional': true,
+      'text-max-width': 9
+    },
+    paint: { 'text-color': '#fff', 'text-halo-color': 'rgba(5,20,23,0.85)', 'text-halo-width': 1.3 }
+  });
+
+  map.addLayer({
+    id: 'demand-glow', type: 'circle', source: 'demand-points',
+    paint: { 'circle-radius': 14, 'circle-color': '#60A5FA', 'circle-opacity': 0.35, 'circle-blur': 0.6 }
+  });
+  map.addLayer({
+    id: 'demand-dot-layer', type: 'circle', source: 'demand-points',
+    paint: {
+      'circle-radius': ['case', ['boolean', ['feature-state', 'selected'], false], 12.5, ['boolean', ['feature-state', 'hover'], false], 11.5, 10],
+      'circle-color': '#60A5FA',
+      'circle-stroke-color': 'rgba(180,210,255,0.85)',
+      'circle-stroke-width': ['case', ['boolean', ['feature-state', 'selected'], false], 2.5, 1.5]
+    }
+  });
+  map.addLayer({
+    id: 'demand-label-layer', type: 'symbol', source: 'demand-points',
+    layout: {
+      'text-field': ['format', ['get', 'id'], { 'font-scale': 1.05 }, '\n', {}, ['get', 'name'], { 'font-scale': 0.72 }],
+      'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'], 'text-size': 10.5,
+      'text-anchor': 'top', 'text-offset': [0, 1.15], 'text-allow-overlap': false, 'text-optional': true,
+      'text-max-width': 9
+    },
+    paint: { 'text-color': '#fff', 'text-halo-color': 'rgba(5,20,23,0.85)', 'text-halo-width': 1.3 }
+  });
+
+  setLayerSetVisible('source', !mapViewState.heatmapOn);
+  setLayerSetVisible('demand', !mapViewState.heatmapOn);
+
   /* ── Restore toggled state after a style switch ── */
-  setMarkersVisible(!mapViewState.heatmapOn);
   if (mapViewState.connectionsOn) renderAllConnections();
   if (state.selectedSource && state.selectedDemand) drawFlowLine();
+  if (state.selectedSource) highlightMarker(state.selectedSource.id, 'source');
+  if (state.selectedDemand) highlightMarker(state.selectedDemand.id, 'demand');
 }
 
-function add3DBuildingsLayerIfSupported(){
-  if (!map || map.getLayer('3d-buildings') || !map.getSource('composite')) return;
-  try {
-    map.addLayer({
-      id: '3d-buildings', source: 'composite', 'source-layer': 'building',
-      type: 'fill-extrusion', minzoom: 14,
-      filter: ['==', ['get', 'extrude'], 'true'],
-      layout: { visibility: mapViewState.is3D ? 'visible' : 'none' },
-      paint: {
-        'fill-extrusion-color': '#8899a0',
-        'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 15.05, ['get', 'height']],
-        'fill-extrusion-base': ['interpolate', ['linear'], ['zoom'], 14, 0, 15.05, ['get', 'min_height']],
-        'fill-extrusion-opacity': 0.75
-      }
-    });
-  } catch(e) { /* style has no vector building data (e.g. a pure raster style) */ }
+function buildPointsGeoJSON(dict){
+  return {
+    type: 'FeatureCollection',
+    features: Object.values(dict).map(item => ({
+      type: 'Feature', id: item.id,
+      properties: { id: item.id, name: item.name },
+      geometry: { type: 'Point', coordinates: [item.lng, item.lat] }
+    }))
+  };
+}
+
+function setLayerSetVisible(type, visible){
+  if (!map) return;
+  ['glow', 'dot-layer', 'label-layer'].forEach(suffix => {
+    const id = `${type}-${suffix}`;
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+  });
+}
+
+function startGlowPulse(){
+  if (glowPulseRAF) return; /* already running */
+  function tick(){
+    glowPulsePhase += 0.035;
+    const r = 13 + Math.sin(glowPulsePhase) * 4.5;   /* 8.5–17.5 */
+    const o = 0.32 + Math.sin(glowPulsePhase) * 0.14; /* 0.18–0.46 */
+    if (map) {
+      if (map.getLayer('source-glow')) { map.setPaintProperty('source-glow', 'circle-radius', r); map.setPaintProperty('source-glow', 'circle-opacity', o); }
+      if (map.getLayer('demand-glow')) { map.setPaintProperty('demand-glow', 'circle-radius', r); map.setPaintProperty('demand-glow', 'circle-opacity', o); }
+    }
+    glowPulseRAF = requestAnimationFrame(tick);
+  }
+  tick();
 }
 
 function buildHeatGeoJSON(){
-  const features = Object.values(SOURCES).map(s => ({
-    type: 'Feature',
-    properties: { weight: s.tempMax, power: s.power },
-    geometry: { type: 'Point', coordinates: [s.lng, s.lat] }
-  }));
+  const features = [];
+  Object.values(SOURCES).forEach(s => {
+    features.push({ type: 'Feature', properties: { weight: s.tempMax }, geometry: { type: 'Point', coordinates: [s.lng, s.lat] } });
+  });
+  Object.values(DEMANDS).forEach(d => {
+    features.push({ type: 'Feature', properties: { weight: d.tempReq * 0.3 }, geometry: { type: 'Point', coordinates: [d.lng, d.lat] } });
+  });
+  const ZONE_BASELINE = { utilities: 40, distillation: 45, conversion: 55, cooling: 15, treating: 28, services: 8, port: 10 };
+  BUILDINGS.features.forEach(f => {
+    const c = f.geometry.coordinates[0];
+    const cx = (c[0][0] + c[2][0]) / 2, cy = (c[0][1] + c[2][1]) / 2;
+    const w = ZONE_BASELINE[f.properties.zone] ?? 20;
+    features.push({ type: 'Feature', properties: { weight: w }, geometry: { type: 'Point', coordinates: [cx, cy] } });
+  });
   return { type: 'FeatureCollection', features };
-}
-
-function setMarkersVisible(visible){
-  Object.values(markerRefs.source).forEach(r => r.el.style.display = visible ? '' : 'none');
-  Object.values(markerRefs.demand).forEach(r => r.el.style.display = visible ? '' : 'none');
 }
 
 function renderAllConnections(){
@@ -885,21 +984,6 @@ function renderAllConnections(){
     return { type: 'Feature', properties: { score: o.score }, geometry: { type: 'LineString', coordinates: bezierCoords(s.lng, s.lat, d.lng, d.lat, 0.0006) } };
   }).filter(Boolean);
   map.getSource('connections').setData({ type: 'FeatureCollection', features });
-}
-
-function addLiveMarker(item, type){
-  const el = document.createElement('div');
-  el.className = `gl-marker gl-marker-${type}`;
-  el.dataset.id = item.id;
-  el.innerHTML = `<div class="gl-marker-inner"><div class="gl-marker-pulse"></div><div class="gl-marker-dot">${item.id}</div></div>`;
-  el.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (type === 'source') selectSource(item.id); else selectDemand(item.id);
-  });
-  const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-    .setLngLat([item.lng, item.lat])
-    .addTo(map);
-  markerRefs[type][item.id] = { marker, el };
 }
 
 /* ═══════════════════════════════════════════════════
@@ -918,7 +1002,8 @@ function toggleHeatmap(){
   if (!map) return;
   mapViewState.heatmapOn = !mapViewState.heatmapOn;
   if (map.getLayer('heat-layer')) map.setLayoutProperty('heat-layer', 'visibility', mapViewState.heatmapOn ? 'visible' : 'none');
-  setMarkersVisible(!mapViewState.heatmapOn);
+  setLayerSetVisible('source', !mapViewState.heatmapOn);
+  setLayerSetVisible('demand', !mapViewState.heatmapOn);
   document.getElementById('tool-heatmap').classList.toggle('active', mapViewState.heatmapOn);
 }
 
@@ -934,7 +1019,7 @@ function toggle3D(){
   if (!map) return;
   mapViewState.is3D = !mapViewState.is3D;
   map.easeTo({ pitch: mapViewState.is3D ? 55 : 0, duration: 700 });
-  if (map.getLayer('3d-buildings')) map.setLayoutProperty('3d-buildings', 'visibility', mapViewState.is3D ? 'visible' : 'none');
+  if (map.getLayer('building-solids-layer')) map.setLayoutProperty('building-solids-layer', 'visibility', mapViewState.is3D ? 'visible' : 'none');
   document.getElementById('tool-3d').classList.toggle('active', mapViewState.is3D);
 }
 
@@ -977,13 +1062,23 @@ function closePopup() {
    MAP MARKER HIGHLIGHTING
    ═══════════════════════════════════════════════════ */
 function highlightMarker(id, type) {
-  Object.entries(markerRefs[type]).forEach(([mid, ref]) => {
-    ref.el.classList.toggle('highlighted', mid === id);
+  if (!map) return;
+  const sourceId = type === 'source' ? 'source-points' : 'demand-points';
+  const data = type === 'source' ? SOURCES : DEMANDS;
+  if (!map.getSource(sourceId)) return;
+  Object.keys(data).forEach(k => {
+    map.setFeatureState({ source: sourceId, id: k }, { selected: k === id });
   });
 }
 
 function clearMarkerHighlights(type) {
-  Object.values(markerRefs[type]).forEach(ref => ref.el.classList.remove('highlighted'));
+  if (!map) return;
+  const sourceId = type === 'source' ? 'source-points' : 'demand-points';
+  const data = type === 'source' ? SOURCES : DEMANDS;
+  if (!map.getSource(sourceId)) return;
+  Object.keys(data).forEach(k => {
+    map.setFeatureState({ source: sourceId, id: k }, { selected: false });
+  });
 }
 
 /* ═══════════════════════════════════════════════════
