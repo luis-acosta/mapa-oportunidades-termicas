@@ -1,0 +1,393 @@
+@import "tailwindcss";
+
+/* Valor Térmico · identidad de cámara termográfica: grafito, escala ironbow,
+   tipografía técnica (JetBrains Mono en titulares y HUD, IBM Plex Sans en texto).
+   Las variables de fuente (--font-titulos, --font-texto, --font-mono) las pone next/font. */
+:root {
+  color-scheme: dark;
+  --hud: rgba(237, 237, 237, 0.55);
+  --hud-tenue: rgba(237, 237, 237, 0.18);
+  --ambar: #ffb000;
+  --caliente: #ff5a1f;
+  --frio: #5ac8fa;
+  --seleccion: #ffe14d;
+  --ironbow: linear-gradient(90deg, #3c5adc, #8c32b4, #e1376e, #ff6e1e, #ffc32d, #fffad7);
+}
+
+html,
+body {
+  background: #0a0a0b;
+  color: #ededed;
+  font-family: var(--font-texto), "IBM Plex Sans", system-ui, sans-serif;
+}
+
+h1,
+h2,
+h3,
+.titular {
+  font-family: var(--font-titulos), "JetBrains Mono", monospace;
+  letter-spacing: -0.02em;
+}
+
+.cifra-tabular {
+  font-family: var(--font-mono), "IBM Plex Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud {
+  font-family: var(--font-titulos), "JetBrains Mono", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.vt-degradado {
+  background: var(--ironbow);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Marco con esquinas de visor (sin cajas de vidrio): fondo sólido casi negro.
+   En la capa de componentes para que las utilidades (absolute, etc.) manden. */
+@layer components {
+  .visor {
+    position: relative;
+    background: rgba(10, 10, 11, 0.9);
+    border: 1px solid var(--hud-tenue);
+  }
+  .visor::before,
+  .visor::after {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border-color: var(--ambar);
+    border-style: solid;
+    pointer-events: none;
+  }
+  .visor::before {
+    top: -1px;
+    left: -1px;
+    border-width: 2px 0 0 2px;
+  }
+  .visor::after {
+    bottom: -1px;
+    right: -1px;
+    border-width: 0 2px 2px 0;
+  }
+}
+
+/* Retículas de fuentes y demandas sobre el mapa (marcadores HTML). */
+.vt-mira {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.vt-mira__cruz {
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid currentColor;
+}
+.vt-mira__cruz::before,
+.vt-mira__cruz::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+}
+.vt-mira__cruz::before {
+  left: 50%;
+  top: -7px;
+  bottom: -7px;
+  width: 1.5px;
+  transform: translateX(-50%);
+}
+.vt-mira__cruz::after {
+  top: 50%;
+  left: -7px;
+  right: -7px;
+  height: 1.5px;
+  transform: translateY(-50%);
+}
+.vt-mira--fuente {
+  color: #ff8a3d;
+}
+.vt-mira--fuente .vt-mira__cruz {
+  border-radius: 0;
+}
+.vt-mira--demanda {
+  color: var(--frio);
+}
+.vt-mira--demanda .vt-mira__cruz {
+  border-radius: 50%;
+}
+.vt-mira__lectura {
+  position: absolute;
+  left: 22px;
+  top: -20px;
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 6px;
+  align-items: baseline;
+  padding: 2px 6px;
+  background: rgba(10, 10, 11, 0.88);
+  border-left: 2px solid currentColor;
+  white-space: nowrap;
+  text-align: left;
+  font-family: var(--font-titulos), monospace;
+  pointer-events: none;
+}
+.vt-mira__lectura i {
+  font-style: normal;
+  font-size: 10px;
+  color: #9b9ba1;
+}
+.vt-mira__lectura b {
+  font-size: 12px;
+  font-weight: 700;
+  color: currentColor;
+}
+.vt-mira__lectura small {
+  grid-column: 1 / -1;
+  display: none;
+  font-family: var(--font-texto), sans-serif;
+  font-size: 10.5px;
+  color: #d0d0d4;
+}
+.vt-mira:hover .vt-mira__lectura small,
+.vt-mira[data-foco="1"] .vt-mira__lectura small {
+  display: block;
+}
+.vt-mira:hover {
+  z-index: 5;
+}
+.vt-mira[data-foco="1"] {
+  z-index: 4;
+}
+.vt-mira[data-foco="1"] .vt-mira__cruz {
+  border-color: var(--seleccion);
+  box-shadow: 0 0 0 3px rgba(255, 225, 77, 0.25);
+}
+.vt-mira[data-compacta="1"] .vt-mira__lectura b {
+  display: none;
+}
+/* Mapbox escribe opacity y transform en línea sobre el marcador: se oculta con visibility. */
+.vt-mira[data-visible="0"] {
+  visibility: hidden !important;
+  pointer-events: none;
+}
+
+/* Rótulos de las secciones de la planta. */
+.vt-zona {
+  font-family: var(--font-titulos), monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(237, 237, 237, 0.62);
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 1px 3px #000;
+}
+
+/* Barrido de escaneo de la intro. */
+@keyframes vt-barrido {
+  from {
+    transform: translateY(-10vh);
+  }
+  to {
+    transform: translateY(110vh);
+  }
+}
+.vt-barrido {
+  animation: vt-barrido 1.4s cubic-bezier(0.6, 0, 0.3, 1) forwards;
+}
+@keyframes vt-revelar {
+  from {
+    clip-path: inset(0 0 0 0);
+  }
+  to {
+    clip-path: inset(100% 0 0 0);
+  }
+}
+.vt-revelar {
+  animation: vt-revelar 1.4s cubic-bezier(0.6, 0, 0.3, 1) forwards;
+}
+@keyframes vt-parpadeo {
+  50% {
+    opacity: 0.25;
+  }
+}
+.vt-parpadeo {
+  animation: vt-parpadeo 1.2s steps(2) infinite;
+}
+
+/* Progreso del paso en la presentación automática (CSS, sin renders de React). */
+.vt-progreso-paso {
+  width: 0;
+  animation-name: vt-progreso;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes vt-progreso {
+  to {
+    width: 100%;
+  }
+}
+
+/* Deslizadores. */
+.vt-rango {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 3px;
+  background: var(--ironbow);
+  outline: none;
+}
+.vt-rango::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 16px;
+  background: #ededed;
+  border: 2px solid #0a0a0b;
+  cursor: pointer;
+}
+.vt-rango::-moz-range-thumb {
+  width: 12px;
+  height: 16px;
+  background: #ededed;
+  border: 2px solid #0a0a0b;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+/* Escala de Mapbox con la estética del HUD. */
+.vt-mapa .mapboxgl-ctrl-scale {
+  background: rgba(10, 10, 11, 0.8);
+  border-color: var(--hud);
+  color: #ededed;
+  font-family: var(--font-titulos), monospace;
+  font-size: 10px;
+}
+
+/* Celular. */
+@media (max-width: 767px) {
+  .vt-mira {
+    width: 20px;
+    height: 20px;
+  }
+  .vt-mira__lectura {
+    left: 16px;
+    top: -16px;
+  }
+  .vt-mira__lectura small {
+    display: none !important;
+  }
+  .vt-zona {
+    font-size: 8px;
+  }
+}
+.vt-tarjeta-movil {
+  animation: vt-subir 0.28s ease-out;
+}
+@keyframes vt-subir {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vt-tarjeta-movil,
+  .vt-barrido,
+  .vt-revelar {
+    animation: none;
+  }
+}
+
+aside::-webkit-scrollbar,
+section::-webkit-scrollbar {
+  width: 5px;
+}
+aside::-webkit-scrollbar-thumb,
+section::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Etiquetas del gemelo digital (CSS2DRenderer). */
+.vt-etiqueta3d {
+  font-family: var(--font-titulos), "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ededed;
+  background: rgba(10, 10, 11, 0.78);
+  border: 1px solid rgba(237, 237, 237, 0.18);
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+.vt-etiqueta3d--dato {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  border-color: rgba(255, 176, 0, 0.45);
+}
+
+/* Informe en formato A4: hojas sobre fondo gris en pantalla; una por página al imprimir.
+   En @layer components para que las utilidades (p. ej. el fondo oscuro de la portada) ganen. */
+@page {
+  size: A4;
+  margin: 0;
+}
+@layer components {
+.vt-pagina {
+  display: flex;
+  flex-direction: column;
+  width: 210mm;
+  min-height: 297mm;
+  background: #fff;
+  color: #0a0a0b;
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.45);
+  break-after: page;
+}
+.vt-informe {
+  overflow: auto;
+  height: 100dvh;
+}
+@media print {
+  html,
+  body {
+    background: #fff !important;
+  }
+  .vt-informe {
+    height: auto;
+    overflow: visible;
+  }
+  .vt-sin-imprimir {
+    display: none !important;
+  }
+  .vt-hojas {
+    zoom: 1 !important;
+  }
+  .vt-pagina {
+    box-shadow: none;
+    height: 297mm;
+    overflow: hidden;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+}
+/* Etiquetas del gemelo sobre el fondo azul de plano CAD. */
+.vt-etiqueta3d--cad {
+  background: rgba(255, 255, 255, 0.9);
+  color: #16212e;
+  border-color: rgba(22, 33, 46, 0.25);
+  transition: opacity 0.3s;
+}
+.vt-etiqueta3d--cad.vt-etiqueta3d--dato {
+  background: rgba(10, 10, 11, 0.82);
+  color: #ededed;
+}
