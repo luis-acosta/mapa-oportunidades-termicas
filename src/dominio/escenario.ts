@@ -15,6 +15,13 @@ export type TipoDemanda = "CALOR" | "FRIO" | "ELECTRICIDAD";
  * La asignación de cada sección a un proceso es ILUSTRATIVA.
  */
 const PX = (x: number, y: number) => ({ lng: -75.4915 + (x - 640) * 1.626e-5, lat: 10.3135 + (450 - y) * 1.611e-5 });
+/** Esquinas (sup. izq., sup. der., inf. der., inf. izq.) de la imagen satelital de referencia de 1280×900 px. */
+export const ESQUINAS_SATELITE: [[number, number], [number, number], [number, number], [number, number]] = [
+  [PX(0, 0).lng, PX(0, 0).lat],
+  [PX(1280, 0).lng, PX(1280, 0).lat],
+  [PX(1280, 900).lng, PX(1280, 900).lat],
+  [PX(0, 900).lng, PX(0, 900).lat],
+];
 const poligonoPx = (x0: number, y0: number, x1: number, y1: number): Array<[number, number]> =>
   [PX(x0, y0), PX(x1, y0), PX(x1, y1), PX(x0, y1)].map((p) => [p.lng, p.lat]);
 

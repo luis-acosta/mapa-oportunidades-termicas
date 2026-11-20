@@ -5,7 +5,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { Map as MapaMapbox, Marker } from "mapbox-gl";
 import type { MapboxOverlay } from "@deck.gl/mapbox";
 import type { Layer, PickingInfo } from "@deck.gl/core";
-import { DEMANDAS, FUENTES, PASOS, RACKS, ZONAS, type IdPaso } from "@/dominio/escenario";
+import { DEMANDAS, ESQUINAS_SATELITE, FUENTES, PASOS, RACKS, ZONAS, type IdPaso } from "@/dominio/escenario";
 import { rutaTuberia, type Oportunidad, type Par, type Prioridad } from "@/dominio/motor";
 import { hash01, desplazar } from "@/componentes/mapa/geometria";
 import { rgbTemperatura } from "@/componentes/ui";
@@ -159,12 +159,20 @@ function colorCalor(paleta: PaletaCalor): unknown[] {
  * isStyleLoaded() es falso mientras cargan teselas: si el estilo de verdad no
  * está listo, addSource lanza y se reintenta cuando el mapa queda quieto.
  */
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 function aplicarCapasNativas(m: MapaMapbox, termografia: boolean, paleta: PaletaCalor, intensidad: number) {
   const intentar = () => {
-    if (m.getLayer("satellite")) {
-      m.setPaintProperty("satellite", "raster-saturation", termografia ? -0.92 : 0);
-      m.setPaintProperty("satellite", "raster-brightness-max", termografia ? 0.5 : 1);
-      m.setPaintProperty("satellite", "raster-contrast", termografia ? 0.12 : 0);
+    // Respaldo: la imagen satelital estática de la planta va DEBAJO del satélite de Mapbox.
+    // Si Mapbox rechaza las teselas (429 por cuota, 401/403 por token o red), los huecos
+    // dejan ver esta imagen y el mapa nunca queda vacío; si las teselas llegan, la cubren.
+    if (!m.getSource("respaldo-satelite")) m.addSource("respaldo-satelite", { type: "image", url: new URL(`${BASE}/planta/satelite.jpg`, window.location.href).href, coordinates: ESQUINAS_SATELITE });
+    if (!m.getLayer("respaldo-satelite")) m.addLayer({ id: "respaldo-satelite", type: "raster", source: "respaldo-satelite", paint: { "raster-fade-duration": 0 } }, m.getLayer("satellite") ? "satellite" : undefined);
+    for (const id of ["satellite", "respaldo-satelite"]) {
+      if (!m.getLayer(id)) continue;
+      m.setPaintProperty(id, "raster-saturation", termografia ? -0.92 : 0);
+      m.setPaintProperty(id, "raster-brightness-max", termografia ? 0.5 : 1);
+      m.setPaintProperty(id, "raster-contrast", termografia ? 0.12 : 0);
     }
     if (!m.getSource("zonas")) m.addSource("zonas", { type: "geojson", data: GEOJSON_ZONAS });
     if (!m.getLayer("zonas-borde")) m.addLayer({ id: "zonas-borde", type: "line", source: "zonas", paint: { "line-color": "rgba(255,255,255,0.32)", "line-width": 1, "line-dasharray": [3, 3] } });
@@ -269,7 +277,8 @@ function MapaTermicoBase(props: Props) {
   const mapa = useRef<MapaMapbox | null>(null);
   const overlay = useRef<MapboxOverlay | null>(null);
   const [listo, setListo] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** Mapbox rechazó las teselas (cuota, token o red): se muestra la imagen satelital de respaldo. */
+  const [respaldo, setRespaldo] = useState(false);
   const inicioPaso = useRef(0);
   const escena = useMemo(() => construirEscena(paso, pares, oportunidad, cartera, parSeleccionado), [paso, pares, oportunidad, cartera, parSeleccionado]);
   const intensidadPaso = escena.id === "termico" ? intensidad : INTENSIDAD_PASO[escena.id];
@@ -323,7 +332,9 @@ function MapaTermicoBase(props: Props) {
       // El padding no es opción del constructor: se aplica al crear para centrar la planta en el espacio libre.
       m.setPadding(pantalla.current.margen);
       m.on("error", (e) => {
-        if (String((e as { error?: { message?: string } }).error?.message ?? "").match(/token|401|403/i)) setError("No se pudo cargar el mapa: revise el token de Mapbox.");
+        const er = (e as { error?: { message?: string; status?: number } }).error;
+        if (er?.status === 429) setRespaldo(true);
+        else if (String(er?.message ?? "").match(/token|401|403/i)) setRespaldo(true);
       });
       const o = new Overlay({ interleaved: true, layers: [] });
       m.addControl(o);
@@ -556,7 +567,7 @@ function MapaTermicoBase(props: Props) {
   return (
     <div className="vt-mapa absolute inset-0">
       <div ref={contenedor} className="h-full w-full" />
-      {error ? <div className="absolute inset-x-0 top-24 mx-auto w-fit bg-[#FF5A1F] px-4 py-2 text-sm text-black">{error}</div> : null}
+      {respaldo ? <div className="pointer-events-none absolute bottom-3 left-3 bg-black/70 px-2 py-1 text-[11px] text-white/80">Imagen satelital de respaldo (estática)</div> : null}
     </div>
   );
 }
